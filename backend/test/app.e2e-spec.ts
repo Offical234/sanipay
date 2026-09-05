@@ -50,6 +50,38 @@ describe('SaniPay Backend API (e2e)', () => {
     $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
     network: {
       findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    dataPlan: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    electricityProvider: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    cableProvider: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    airtimeTransaction: {
+      create: jest.fn().mockResolvedValue({ id: 'atx_1' }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    dataTransaction: {
+      create: jest.fn().mockResolvedValue({ id: 'dtx_1' }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    electricityTransaction: {
+      create: jest.fn().mockResolvedValue({ id: 'etx_1' }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    cableTransaction: {
+      create: jest.fn().mockResolvedValue({ id: 'ctx_1' }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    transactionItem: {
+      create: jest.fn().mockResolvedValue({ id: 'txi_1' }),
     },
     systemSetting: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -80,6 +112,7 @@ describe('SaniPay Backend API (e2e)', () => {
     transaction: {
       create: jest.fn().mockResolvedValue({ id: 'tx_1', reference: 'SP_MOCK_1', amountKobo: 50000n }),
       findUnique: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({}),
     },
     $transaction: jest.fn(async (cb: any) => cb(mockPrismaService)),
   };
@@ -431,4 +464,264 @@ describe('SaniPay Backend API (e2e)', () => {
     expect(res.body.data.length).toBe(1);
     expect(res.body.data[0].amountFormatted).toBe('+₦5,000.00');
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE 7: VTU SERVICES (AIRTIME, DATA, ELECTRICITY, CABLE TV)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('VTU Services (e2e)', () => {
+    const mockMtnNetwork = {
+      id: 'net_mtn_e2e',
+      code: 'MTN',
+      name: 'MTN Nigeria',
+      airtimeDiscountBps: 200,
+      isActive: true,
+      airtimeEnabled: true,
+      dataEnabled: true,
+    };
+
+    const mockDataPlan = {
+      id: 'b7c3d284-e9fb-4b53-a55b-4264627d7801',
+      planCode: 'MTN-SME-1GB',
+      name: '1GB SME Data',
+      type: 'SME',
+      validity: '30 Days',
+      costPriceKobo: 22500n,
+      sellingPriceKobo: 25000n,
+      isActive: true,
+      networkId: 'net_mtn_e2e',
+      network: mockMtnNetwork,
+    };
+
+    const mockDisCo = {
+      id: 'prov_ikedc_e2e',
+      code: 'IKEDC',
+      name: 'Ikeja Electric',
+      convenienceFeeKobo: 10000n,
+      isActive: true,
+    };
+
+    const mockCable = {
+      id: 'prov_dstv_e2e',
+      code: 'DSTV',
+      name: 'DStv Nigeria',
+      convenienceFeeKobo: 10000n,
+      isActive: true,
+    };
+
+    it('/api/v1/airtime/networks (GET) should list active telecom networks', async () => {
+      mockPrismaService.network.findMany.mockResolvedValue([mockMtnNetwork]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/airtime/networks`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.length).toBe(1);
+      expect(res.body.data[0].code).toBe('MTN');
+    });
+
+    it('/api/v1/airtime/purchase (POST) should purchase airtime with wallet debit', async () => {
+      mockPrismaService.network.findUnique.mockResolvedValue(mockMtnNetwork);
+      mockPrismaService.user.findUnique.mockResolvedValue(mockCustomerUser);
+      mockPrismaService.wallet.findUnique.mockResolvedValue({
+        id: 'wlt_customer_1',
+        userId: 'usr_customer_1',
+        balanceKobo: 500000n,
+        isLocked: false,
+      });
+      mockPrismaService.wallet.update.mockResolvedValue({});
+      mockPrismaService.transaction.findUnique.mockResolvedValue(null);
+      mockPrismaService.transaction.create.mockResolvedValue({
+        id: 'tx_air_e2e',
+        reference: 'SP_AIR_E2E_1',
+        status: 'PROCESSING',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/${API_PREFIX}/airtime/purchase`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          networkCode: 'MTN',
+          recipientPhone: '08012345678',
+          amountKobo: 100000,
+          pin: '1234',
+          idempotencyKey: 'air_idem_e2e_1',
+        })
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.status).toBe('SUCCESS');
+      expect(res.body.data.amountDebitedFormatted).toBe('₦980.00');
+    });
+
+    it('/api/v1/data/plans (GET) should list available data plans', async () => {
+      mockPrismaService.dataPlan.findMany.mockResolvedValue([mockDataPlan]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/data/plans`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.length).toBe(1);
+      expect(res.body.data[0].planCode).toBe('MTN-SME-1GB');
+    });
+
+    it('/api/v1/data/purchase (POST) should purchase data plan successfully', async () => {
+      mockPrismaService.dataPlan.findUnique.mockResolvedValue(mockDataPlan);
+      mockPrismaService.user.findUnique.mockResolvedValue(mockCustomerUser);
+      mockPrismaService.wallet.findUnique.mockResolvedValue({
+        id: 'wlt_customer_1',
+        userId: 'usr_customer_1',
+        balanceKobo: 500000n,
+        isLocked: false,
+      });
+      mockPrismaService.wallet.update.mockResolvedValue({});
+      mockPrismaService.transaction.findUnique.mockResolvedValue(null);
+      mockPrismaService.transaction.create.mockResolvedValue({
+        id: 'tx_dat_e2e',
+        reference: 'SP_DAT_E2E_1',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/${API_PREFIX}/data/purchase`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          planId: 'b7c3d284-e9fb-4b53-a55b-4264627d7801',
+          recipientPhone: '08012345678',
+          pin: '1234',
+          idempotencyKey: 'dat_idem_e2e_1',
+        })
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.status).toBe('SUCCESS');
+      expect(res.body.data.amountDebitedFormatted).toBe('₦250.00');
+    });
+
+    it('/api/v1/electricity/providers (GET) should list electricity DisCos', async () => {
+      mockPrismaService.electricityProvider.findMany.mockResolvedValue([mockDisCo]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/electricity/providers`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data[0].code).toBe('IKEDC');
+    });
+
+    it('/api/v1/electricity/meter/verify (POST) should verify meter details', async () => {
+      mockPrismaService.electricityProvider.findUnique.mockResolvedValue(mockDisCo);
+
+      const res = await request(app.getHttpServer())
+        .post(`/${API_PREFIX}/electricity/meter/verify`)
+        .send({
+          providerCode: 'IKEDC',
+          meterNumber: '01234567890',
+          meterType: 'PREPAID',
+        })
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.customerName).toBeDefined();
+    });
+
+    it('/api/v1/electricity/pay (POST) should pay bill and return token', async () => {
+      mockPrismaService.electricityProvider.findUnique.mockResolvedValue(mockDisCo);
+      mockPrismaService.user.findUnique.mockResolvedValue(mockCustomerUser);
+      mockPrismaService.wallet.findUnique.mockResolvedValue({
+        id: 'wlt_customer_1',
+        userId: 'usr_customer_1',
+        balanceKobo: 1000000n,
+        isLocked: false,
+      });
+      mockPrismaService.wallet.update.mockResolvedValue({});
+      mockPrismaService.transaction.findUnique.mockResolvedValue(null);
+      mockPrismaService.transaction.create.mockResolvedValue({
+        id: 'tx_ele_e2e',
+        reference: 'SP_ELE_E2E_1',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/${API_PREFIX}/electricity/pay`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          providerCode: 'IKEDC',
+          meterNumber: '01234567890',
+          meterType: 'PREPAID',
+          amountKobo: 500000,
+          customerPhone: '08012345678',
+          pin: '1234',
+          idempotencyKey: 'ele_idem_e2e_1',
+        })
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.token).toBeDefined();
+      expect(res.body.data.units).toBeDefined();
+    });
+
+    it('/api/v1/cable/providers (GET) should list cable TV providers', async () => {
+      mockPrismaService.cableProvider.findMany.mockResolvedValue([mockCable]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/cable/providers`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data[0].code).toBe('DSTV');
+      expect(res.body.data[0].packages.length).toBeGreaterThan(0);
+    });
+
+    it('/api/v1/cable/smartcard/verify (POST) should verify smartcard/IUC number', async () => {
+      mockPrismaService.cableProvider.findUnique.mockResolvedValue(mockCable);
+
+      const res = await request(app.getHttpServer())
+        .post(`/${API_PREFIX}/cable/smartcard/verify`)
+        .send({
+          providerCode: 'DSTV',
+          smartcardNumber: '1023456789',
+        })
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.customerName).toBeDefined();
+    });
+
+    it('/api/v1/cable/pay (POST) should renew cable subscription', async () => {
+      mockPrismaService.cableProvider.findUnique.mockResolvedValue(mockCable);
+      mockPrismaService.user.findUnique.mockResolvedValue(mockCustomerUser);
+      mockPrismaService.wallet.findUnique.mockResolvedValue({
+        id: 'wlt_customer_1',
+        userId: 'usr_customer_1',
+        balanceKobo: 2000000n,
+        isLocked: false,
+      });
+      mockPrismaService.wallet.update.mockResolvedValue({});
+      mockPrismaService.transaction.findUnique.mockResolvedValue(null);
+      mockPrismaService.transaction.create.mockResolvedValue({
+        id: 'tx_cab_e2e',
+        reference: 'SP_CAB_E2E_1',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/${API_PREFIX}/cable/pay`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          providerCode: 'DSTV',
+          smartcardNumber: '1023456789',
+          packageCode: 'DSTV_COMPACT',
+          packageName: 'DStv Compact',
+          amountKobo: 1250000,
+          renewalMonths: 1,
+          pin: '1234',
+          idempotencyKey: 'cab_idem_e2e_1',
+        })
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.renewalDate).toBeDefined();
+    });
+  });
 });
+
