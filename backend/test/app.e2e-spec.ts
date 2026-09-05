@@ -68,6 +68,19 @@ describe('SaniPay Backend API (e2e)', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    wallet: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    walletTransaction: {
+      create: jest.fn().mockResolvedValue({ id: 'wtx_1' }),
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
+    },
+    transaction: {
+      create: jest.fn().mockResolvedValue({ id: 'tx_1', reference: 'SP_MOCK_1', amountKobo: 50000n }),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
     $transaction: jest.fn(async (cb: any) => cb(mockPrismaService)),
   };
 
@@ -277,5 +290,145 @@ describe('SaniPay Backend API (e2e)', () => {
         expect(res.body.success).toBe(true);
         expect(res.body.data.totalUsers).toBeDefined();
       });
+  });
+
+  // ────────────────────────── WALLET & ACCOUNTING ──────────────────────────
+
+  it('/api/v1/wallet/balance (GET) should return user wallet details', async () => {
+    mockPrismaService.wallet.findUnique.mockResolvedValue({
+      id: 'wlt_customer_1',
+      userId: mockCustomerUser.id,
+      balanceKobo: 500000n,
+      ledgerBalanceKobo: 500000n,
+      currency: 'NGN',
+      isLocked: false,
+      lockReason: null,
+      user: {
+        id: mockCustomerUser.id,
+        email: mockCustomerUser.email,
+        phone: mockCustomerUser.phone,
+        role: mockCustomerUser.role,
+        profile: { fullName: 'Musa Sani' },
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/${API_PREFIX}/wallet/balance`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.balanceKobo).toBe('500000');
+    expect(res.body.data.balanceFormatted).toBe('₦5,000.00');
+    expect(res.body.data.currency).toBe('NGN');
+  });
+
+  it('/api/v1/wallet/fund/initialize (POST) should initialize checkout', async () => {
+    mockPrismaService.transaction.create.mockResolvedValue({
+      id: 'tx_fund_1',
+      reference: 'SP_FUND_TEST_01',
+      amountKobo: 200000n,
+      providerName: 'PAYSTACK',
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/${API_PREFIX}/wallet/fund/initialize`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        amountKobo: 200000,
+        gateway: 'PAYSTACK',
+      })
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.reference).toBeDefined();
+    expect(res.body.data.authorizationUrl).toBeDefined();
+  });
+
+  it('/api/v1/wallet/fund/initialize (POST) should reject amount below 10,000 Kobo', () => {
+    return request(app.getHttpServer())
+      .post(`/${API_PREFIX}/wallet/fund/initialize`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        amountKobo: 500, // Below min 10,000
+        gateway: 'PAYSTACK',
+      })
+      .expect(400)
+      .expect((res) => {
+        expect(res.body.success).toBe(false);
+        expect(res.body.errorCode).toBe('VALIDATION_ERROR');
+      });
+  });
+
+  it('/api/v1/wallet/transfer (POST) should execute P2P transfer', async () => {
+    mockPrismaService.transaction.findUnique.mockResolvedValue(null);
+    mockPrismaService.user.findFirst.mockResolvedValue({
+      id: 'usr_recipient_2',
+      phone: '08022222222',
+      profile: { fullName: 'Recipient Sani' },
+    });
+    mockPrismaService.user.findUnique.mockResolvedValue(mockCustomerUser);
+    mockPrismaService.wallet.findUnique
+      .mockResolvedValueOnce({
+        id: 'wlt_1',
+        userId: mockCustomerUser.id,
+        balanceKobo: 500000n,
+        isLocked: false,
+      })
+      .mockResolvedValueOnce({
+        id: 'wlt_2',
+        userId: 'usr_recipient_2',
+        balanceKobo: 100000n,
+        isLocked: false,
+      });
+    mockPrismaService.wallet.update.mockResolvedValue({});
+    mockPrismaService.transaction.create.mockResolvedValue({ id: 'tx_xfer_1' });
+
+    const res = await request(app.getHttpServer())
+      .post(`/${API_PREFIX}/wallet/transfer`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        recipientIdentifier: '08022222222',
+        amountKobo: 100000,
+        pin: '1234',
+        narration: 'Project share',
+        idempotencyKey: 'xfer_idem_101',
+      })
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.amountFormatted).toBe('₦1,000.00');
+    expect(res.body.data.reference).toBeDefined();
+  });
+
+  it('/api/v1/wallet/transactions (GET) should return paginated ledger entries', async () => {
+    mockPrismaService.wallet.findUnique.mockResolvedValue({ id: 'wlt_customer_1' });
+    mockPrismaService.walletTransaction.count.mockResolvedValue(1);
+    mockPrismaService.walletTransaction.findMany.mockResolvedValue([
+      {
+        id: 'wtx_1',
+        type: 'CREDIT',
+        amountKobo: 500000n,
+        balanceBeforeKobo: 0n,
+        balanceAfterKobo: 500000n,
+        description: 'Initial funding',
+        createdAt: new Date(),
+        transaction: {
+          reference: 'SP_FUND_001',
+          type: 'WALLET_FUNDING',
+          status: 'SUCCESS',
+        },
+      },
+    ]);
+
+    const res = await request(app.getHttpServer())
+      .get(`/${API_PREFIX}/wallet/transactions`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    expect(res.body.data.length).toBe(1);
+    expect(res.body.data[0].amountFormatted).toBe('+₦5,000.00');
   });
 });
