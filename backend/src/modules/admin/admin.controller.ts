@@ -1,8 +1,10 @@
 import { Controller, Get, Put, Post, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Roles } from '../../common/decorators/auth.decorators';
 
 @ApiTags('Admin Console & Operations')
 @ApiBearerAuth()
+@Roles('SUPER_ADMIN', 'FINANCE_ADMIN', 'SUPPORT')
 @Controller('admin')
 export class AdminController {
   @Get('dashboard/overview')

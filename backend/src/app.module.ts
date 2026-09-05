@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { RolesGuard } from './common/guards/roles.guard';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -20,13 +23,10 @@ import { ProvidersModule } from './modules/providers/providers.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      load: [configuration],
-    }),
+    ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
     DatabaseModule,
-    HealthModule,
     AuthModule,
+    HealthModule,
     UsersModule,
     WalletModule,
     PaymentsModule,
@@ -40,6 +40,18 @@ import { ProvidersModule } from './modules/providers/providers.module';
     SupportModule,
     AdminModule,
     ProvidersModule,
+  ],
+  providers: [
+    // Apply JwtAuthGuard globally — routes must explicitly use @Public() to bypass
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    // Apply RolesGuard globally — verifies @Roles() decorator requirements
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
   ],
 })
 export class AppModule {}

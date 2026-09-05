@@ -1,9 +1,11 @@
 import { Controller, Get, Post, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Public } from '../../common/decorators/auth.decorators';
 
 @ApiTags('Cable TV Subscriptions')
 @Controller('cable')
 export class CableController {
+  @Public()
   @Get('providers')
   @ApiOperation({ summary: 'List supported Cable TV providers (DStv, GOtv, StarTimes)' })
   async getProviders() {
@@ -13,6 +15,7 @@ export class CableController {
     };
   }
 
+  @Public()
   @Post('verify-smartcard')
   @ApiOperation({ summary: 'Validate smartcard / IUC number with Cable TV provider' })
   async verifySmartcard(@Body() body: Record<string, any>) {

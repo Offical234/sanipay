@@ -1,9 +1,11 @@
 import { Controller, Get, Post, Query, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { Public } from '../../common/decorators/auth.decorators';
 
 @ApiTags('Mobile Data Bundles')
 @Controller('data')
 export class DataController {
+  @Public()
   @Get('plans')
   @ApiOperation({ summary: 'List available data plans dynamically' })
   @ApiQuery({ name: 'network', required: false, enum: ['MTN', 'AIRTEL', 'GLO', 'NINE_MOBILE'] })
