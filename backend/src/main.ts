@@ -9,7 +9,7 @@ import { API_PREFIX } from './common/constants';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // 1. Security Headers
   app.use(

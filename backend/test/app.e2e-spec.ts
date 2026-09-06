@@ -83,6 +83,12 @@ describe('SaniPay Backend API (e2e)', () => {
     transactionItem: {
       create: jest.fn().mockResolvedValue({ id: 'txi_1' }),
     },
+    paymentTransaction: {
+      create: jest.fn().mockResolvedValue({ id: 'ptx_1' }),
+      update: jest.fn().mockResolvedValue({}),
+      upsert: jest.fn().mockResolvedValue({ id: 'ptx_1' }),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
     systemSetting: {
       findMany: jest.fn().mockResolvedValue([]),
     },
@@ -94,6 +100,8 @@ describe('SaniPay Backend API (e2e)', () => {
     },
     referral: {
       create: jest.fn(),
+      findUnique: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({}),
     },
     refreshToken: {
       create: jest.fn().mockResolvedValue({ id: 'rt_1' }),
@@ -723,5 +731,143 @@ describe('SaniPay Backend API (e2e)', () => {
       expect(res.body.data.renewalDate).toBeDefined();
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE 8: PAYMENT GATEWAYS & WEBHOOKS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('Payment Gateways & Webhooks (e2e)', () => {
+    const mockFundingTx = {
+      id: 'tx_fund_e2e_1',
+      userId: 'usr_customer_1',
+      reference: 'SP_FUND_E2E_123',
+      idempotencyKey: 'fund_idem_e2e_1',
+      type: 'WALLET_FUNDING',
+      status: 'PENDING',
+      amountKobo: 500000n,
+      feeKobo: 0n,
+      discountKobo: 0n,
+      netAmountKobo: 500000n,
+      currency: 'NGN',
+      providerName: 'PAYSTACK',
+      updatedAt: new Date(),
+    };
+
+    it('/api/v1/payments/webhooks/paystack (POST) should process Paystack webhook and credit wallet', async () => {
+      mockPrismaService.transaction.findUnique.mockResolvedValue(mockFundingTx);
+      mockPrismaService.transaction.update.mockResolvedValue({
+        ...mockFundingTx,
+        status: 'SUCCESS',
+      });
+      mockPrismaService.wallet.findUnique.mockResolvedValue({
+        id: 'wlt_customer_1',
+        userId: 'usr_customer_1',
+        balanceKobo: 0n,
+        isLocked: false,
+      });
+      mockPrismaService.wallet.update.mockResolvedValue({});
+
+      const payload = {
+        event: 'charge.success',
+        data: {
+          reference: 'SP_FUND_E2E_123',
+          amount: 500000,
+          id: 'pstk_test_123',
+          channel: 'card',
+        },
+      };
+
+      const res = await request(app.getHttpServer())
+        .post(`/${API_PREFIX}/payments/webhooks/paystack`)
+        .set('x-paystack-signature', 'valid_test_sig')
+        .send(payload);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+
+    it('/api/v1/payments/webhooks/flutterwave (POST) should process Flutterwave webhook', async () => {
+      mockPrismaService.transaction.findUnique.mockResolvedValue({
+        ...mockFundingTx,
+        providerName: 'FLUTTERWAVE',
+      });
+      mockPrismaService.transaction.update.mockResolvedValue({
+        ...mockFundingTx,
+        status: 'SUCCESS',
+      });
+      mockPrismaService.wallet.findUnique.mockResolvedValue({
+        id: 'wlt_customer_1',
+        userId: 'usr_customer_1',
+        balanceKobo: 0n,
+        isLocked: false,
+      });
+      mockPrismaService.wallet.update.mockResolvedValue({});
+
+      const payload = {
+        event: 'charge.completed',
+        data: {
+          tx_ref: 'SP_FUND_E2E_123',
+          amount: 5000,
+          flw_ref: 'flw_test_123',
+          status: 'successful',
+        },
+      };
+
+      const res = await request(app.getHttpServer())
+        .post(`/${API_PREFIX}/payments/webhooks/flutterwave`)
+        .set('verif-hash', 'flw-test-hash')
+        .send(payload);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+
+    it('/api/v1/payments/webhooks/mock (POST) should trigger sandbox mock fulfillment', async () => {
+      mockPrismaService.transaction.findUnique.mockResolvedValue({
+        ...mockFundingTx,
+        providerName: 'MOCK',
+      });
+      mockPrismaService.transaction.update.mockResolvedValue({
+        ...mockFundingTx,
+        status: 'SUCCESS',
+      });
+      mockPrismaService.wallet.findUnique.mockResolvedValue({
+        id: 'wlt_customer_1',
+        userId: 'usr_customer_1',
+        balanceKobo: 0n,
+        isLocked: false,
+      });
+      mockPrismaService.wallet.update.mockResolvedValue({});
+
+      const res = await request(app.getHttpServer())
+        .post(`/${API_PREFIX}/payments/webhooks/mock`)
+        .send({
+          reference: 'SP_FUND_E2E_123',
+          amountKobo: 500000,
+          channel: 'mock_card',
+        })
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.status).toBe('SUCCESS');
+    });
+
+    it('/api/v1/payments/verify/:reference (GET) should return payment receipt', async () => {
+      mockPrismaService.transaction.findUnique.mockResolvedValue({
+        ...mockFundingTx,
+        status: 'SUCCESS',
+        providerReference: 'GW_CONFIRMED_1',
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/payments/verify/SP_FUND_E2E_123`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.status).toBe('SUCCESS');
+      expect(res.body.data.amountFormatted).toBe('₦5,000.00');
+    });
+  });
 });
+
 
