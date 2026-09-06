@@ -95,13 +95,23 @@ describe('SaniPay Backend API (e2e)', () => {
     user: {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
       update: jest.fn(),
     },
     referral: {
       create: jest.fn(),
       findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
       update: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    referralReward: {
+      create: jest.fn().mockResolvedValue({ id: 'rew_1' }),
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     refreshToken: {
       create: jest.fn().mockResolvedValue({ id: 'rt_1' }),
@@ -975,6 +985,178 @@ describe('SaniPay Backend API (e2e)', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.receiptNumber).toBe('SP_ELE_E2E_99999');
       expect(res.body.data.verificationSeal).toBeDefined();
+    });
+  });
+
+  describe('Referral & Commission Engine (e2e)', () => {
+    it('/api/v1/referrals/summary (GET) should return referral code, link, and earnings metrics', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: mockCustomerUser.id,
+        email: mockCustomerUser.email,
+        role: 'CUSTOMER',
+        status: 'ACTIVE',
+        referralCode: 'SP-CUST01',
+      });
+      mockPrismaService.referral.count
+        .mockResolvedValueOnce(3) // total
+        .mockResolvedValueOnce(1) // pending
+        .mockResolvedValueOnce(1) // qualified
+        .mockResolvedValueOnce(1); // rewarded
+
+      mockPrismaService.referralReward.findMany.mockResolvedValue([
+        { amountKobo: 20000n, isPaid: false },
+        { amountKobo: 20000n, isPaid: true },
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/referrals/summary`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.referralCode).toBe('SP-CUST01');
+      expect(res.body.data.referralLink).toBe('https://sanipay.ng/ref/SP-CUST01');
+      expect(res.body.data.totalReferred).toBe(3);
+      expect(res.body.data.unclaimedRewardsFormatted).toBe('₦200.00');
+      expect(res.body.data.totalEarnedFormatted).toBe('₦400.00');
+    });
+
+    it('/api/v1/referrals/history (GET) should return paginated referred users with masked info', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: mockCustomerUser.id,
+        email: mockCustomerUser.email,
+        role: 'CUSTOMER',
+        status: 'ACTIVE',
+      });
+      mockPrismaService.referral.count.mockResolvedValue(1);
+      mockPrismaService.referral.findMany.mockResolvedValue([
+        {
+          id: 'ref-e2e-1',
+          status: 'QUALIFIED',
+          createdAt: new Date('2026-09-01'),
+          updatedAt: new Date('2026-09-02'),
+          referredUser: {
+            id: 'user-referee-1',
+            phone: '08099887766',
+            createdAt: new Date('2026-09-01'),
+            profile: { fullName: 'Chidi Okonkwo' },
+          },
+          rewards: [
+            {
+              id: 'rew-e2e-1',
+              amountKobo: 20000n,
+              isPaid: false,
+              paidAt: null,
+            },
+          ],
+        },
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/referrals/history?page=1&limit=10`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.length).toBe(1);
+      expect(res.body.data[0].refereeName).toBe('Chidi O.');
+      expect(res.body.data[0].refereePhone).toBe('0809***7766');
+      expect(res.body.data[0].status).toBe('QUALIFIED');
+      expect(res.body.data[0].rewardAmountFormatted).toBe('₦200.00');
+      expect(res.body.meta.totalCount).toBe(1);
+    });
+
+    it('/api/v1/referrals/claim (POST) should claim pending referral rewards into wallet', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: mockCustomerUser.id,
+        email: mockCustomerUser.email,
+        role: 'CUSTOMER',
+        status: 'ACTIVE',
+      });
+      mockPrismaService.referralReward.findMany.mockResolvedValue([
+        { id: 'rew-e2e-1', referralId: 'ref-e2e-1', amountKobo: 20000n, isPaid: false },
+      ]);
+      mockPrismaService.wallet.findUnique.mockResolvedValue({
+        id: 'wall-e2e-1',
+        userId: mockCustomerUser.id,
+        balanceKobo: 100000n,
+        ledgerBalanceKobo: 100000n,
+        isLocked: false,
+      });
+      mockPrismaService.wallet.update.mockResolvedValue({
+        id: 'wall-e2e-1',
+        balanceKobo: 120000n,
+        ledgerBalanceKobo: 120000n,
+      });
+      mockPrismaService.transaction.create.mockResolvedValue({
+        id: 'tx-claim-e2e-1',
+        reference: 'SP_REF_CLM_E2E_9999',
+        amountKobo: 20000n,
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/${API_PREFIX}/referrals/claim`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({})
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.amountClaimedFormatted).toBe('₦200.00');
+      expect(res.body.data.rewardsCount).toBe(1);
+      expect(res.body.data.walletBalanceFormatted).toBe('₦1,200.00');
+    });
+
+    it('/api/v1/referrals/admin/overview (GET) should permit SUPER_ADMIN with 200', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: mockAdminUser.id,
+        email: mockAdminUser.email,
+        role: 'SUPER_ADMIN',
+        status: 'ACTIVE',
+      });
+      mockPrismaService.referral.count
+        .mockResolvedValueOnce(25) // total
+        .mockResolvedValueOnce(10) // pending
+        .mockResolvedValueOnce(5) // qualified
+        .mockResolvedValueOnce(10); // rewarded
+
+      mockPrismaService.referralReward.findMany.mockResolvedValue([
+        { amountKobo: 20000n },
+      ]);
+      mockPrismaService.user.findMany.mockResolvedValue([
+        {
+          id: 'user-admin-top',
+          email: 'top@admin.com',
+          phone: '08011223344',
+          referralCode: 'TOP_LEAD',
+          profile: { fullName: 'Top Lead' },
+          _count: { referralRecords: 15 },
+        },
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/referrals/admin/overview`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.totalReferrals).toBe(25);
+      expect(res.body.data.statusCounts.pendingQualification).toBe(10);
+      expect(res.body.data.rewardsSummary.totalRewardsPaidCount).toBe(1);
+      expect(res.body.data.topReferrers.length).toBe(1);
+    });
+
+    it('/api/v1/referrals/admin/overview (GET) should forbid CUSTOMER with 403', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: mockCustomerUser.id,
+        email: mockCustomerUser.email,
+        role: 'CUSTOMER',
+        status: 'ACTIVE',
+      });
+
+      await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/referrals/admin/overview`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(403);
     });
   });
 });

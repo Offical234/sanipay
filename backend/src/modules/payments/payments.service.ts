@@ -276,8 +276,16 @@ export class PaymentsService {
             where: { id: referral.id },
             data: { status: 'QUALIFIED' },
           });
+          await tx.referralReward.create({
+            data: {
+              referralId: referral.id,
+              userId: referral.referrerId,
+              amountKobo: 20000n,
+              isPaid: false,
+            },
+          });
           this.logger.log(
-            `Referral qualified for referred user ${transaction.userId} (Referrer: ${referral.referrerId})`,
+            `Referral qualified for referred user ${transaction.userId} (Referrer: ${referral.referrerId}) - reward generated`,
           );
         }
       }

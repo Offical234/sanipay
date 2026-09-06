@@ -43,6 +43,9 @@ describe('PaymentsService', () => {
         findUnique: jest.fn(),
         update: jest.fn(),
       },
+      referralReward: {
+        create: jest.fn(),
+      },
       $transaction: jest.fn((cb) => {
         if (typeof cb === 'function') {
           return cb(prisma);
