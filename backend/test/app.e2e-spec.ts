@@ -120,6 +120,9 @@ describe('SaniPay Backend API (e2e)', () => {
     transaction: {
       create: jest.fn().mockResolvedValue({ id: 'tx_1', reference: 'SP_MOCK_1', amountKobo: 50000n }),
       findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
       update: jest.fn().mockResolvedValue({}),
     },
     $transaction: jest.fn(async (cb: any) => cb(mockPrismaService)),
@@ -868,6 +871,113 @@ describe('SaniPay Backend API (e2e)', () => {
       expect(res.body.data.amountFormatted).toBe('₦5,000.00');
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE 9: CENTRAL TRANSACTION HISTORY & DIGITAL RECEIPTS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('Transactions & Digital Receipts (e2e)', () => {
+    const mockDetailedTx = {
+      id: 'd9b3a184-d113-4608-8e6d-74d41286a999',
+      userId: 'usr_customer_1',
+      reference: 'SP_ELE_E2E_99999',
+      idempotencyKey: 'ele_idem_e2e_99',
+      type: 'ELECTRICITY',
+      status: 'SUCCESS',
+      amountKobo: 500000n,
+      feeKobo: 10000n,
+      discountKobo: 0n,
+      netAmountKobo: 510000n,
+      currency: 'NGN',
+      providerName: 'MOCK',
+      providerReference: 'MOCK_EL_E2E_1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      user: {
+        id: 'usr_customer_1',
+        email: 'musa@example.com',
+        phone: '08012345678',
+        profile: { fullName: 'Musa Sani' },
+      },
+      airtimeTransaction: null,
+      dataTransaction: null,
+      electricityTransaction: {
+        meterNumber: '01234567890',
+        meterType: 'PREPAID',
+        customerName: 'Adebayo Okafor',
+        customerAddress: '14 Ikeja GRA, Lagos',
+        token: '1234-5678-9012-3456',
+        units: '109.89 kWh',
+        receiptNumber: 'RCP_E2E_1234',
+        provider: { name: 'Ikeja Electric', code: 'IKEDC' },
+      },
+      cableTransaction: null,
+      paymentTransaction: null,
+      transactionItems: [],
+      walletTransactions: [],
+    };
+
+    it('/api/v1/transactions (GET) should return paginated user transaction history', async () => {
+      mockPrismaService.transaction.count.mockResolvedValue(1);
+      mockPrismaService.transaction.findMany.mockResolvedValue([mockDetailedTx]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/transactions?page=1&limit=10`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data.length).toBe(1);
+      expect(res.body.data[0].reference).toBe('SP_ELE_E2E_99999');
+      expect(res.body.data[0].amountFormatted).toBe('₦5,000.00');
+      expect(res.body.meta.totalCount).toBe(1);
+    });
+
+    it('/api/v1/transactions/summary (GET) should return transaction summary statistics', async () => {
+      mockPrismaService.transaction.findMany.mockResolvedValue([
+        { type: 'WALLET_FUNDING', amountKobo: 500000n, netAmountKobo: 500000n },
+        { type: 'ELECTRICITY', amountKobo: 500000n, netAmountKobo: 510000n },
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/transactions/summary`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.totalFundedFormatted).toBe('₦5,000.00');
+      expect(res.body.data.totalSpentFormatted).toBe('₦5,100.00');
+    });
+
+    it('/api/v1/transactions/:id (GET) should return digital receipt with token and details', async () => {
+      mockPrismaService.transaction.findFirst.mockResolvedValue(mockDetailedTx);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/transactions/${mockDetailedTx.id}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.receiptNumber).toBe('SP_ELE_E2E_99999');
+      expect(res.body.data.serviceDetails.token).toBe('1234-5678-9012-3456');
+      expect(res.body.data.serviceDetails.units).toBe('109.89 kWh');
+    });
+
+    it('/api/v1/transactions/reference/:reference (GET) should return receipt by reference', async () => {
+      mockPrismaService.transaction.findFirst.mockResolvedValue(mockDetailedTx);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/transactions/reference/SP_ELE_E2E_99999`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.receiptNumber).toBe('SP_ELE_E2E_99999');
+      expect(res.body.data.verificationSeal).toBeDefined();
+    });
+  });
 });
+
 
 

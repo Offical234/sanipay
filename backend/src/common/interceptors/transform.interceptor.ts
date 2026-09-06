@@ -59,11 +59,22 @@ export class TransformInterceptor<T>
             ? res.data
             : res;
 
-        return {
+        const meta =
+          res && typeof res === 'object' && 'meta' in res
+            ? serializeBigInt(res.meta)
+            : undefined;
+
+        const response: StandardResponse<T> = {
           success: true,
           message,
           data: serializeBigInt(data),
         };
+
+        if (meta !== undefined) {
+          response.meta = meta;
+        }
+
+        return response;
       }),
     );
   }
