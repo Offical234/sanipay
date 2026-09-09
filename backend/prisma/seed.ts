@@ -1,9 +1,80 @@
-import { PrismaClient, TelecomNetworkCode, DataPlanType, UserRole } from '@prisma/client';
+import { PrismaClient, TelecomNetworkCode, DataPlanType, UserRole, UserStatus } from '@prisma/client';
+import * as argon2 from 'argon2';
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log('Seeding SaniPay database master data...');
+
+  // 0. Seed Administrative & Demo Users
+  const argonOptions = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3 };
+  const defaultPinHash = await argon2.hash('1234', argonOptions);
+
+  const seedUsers = [
+    {
+      email: 'admin@sanipay.ng',
+      phone: '08012345678',
+      password: 'AdminSecurePassword123!',
+      fullName: 'SaniPay Super Admin',
+      role: UserRole.SUPER_ADMIN,
+      referralCode: 'SANIADMIN',
+      initialBalanceKobo: BigInt(100000000), // ₦1,000,000.00 float reserve
+    },
+    {
+      email: 'finance@sanipay.ng',
+      phone: '08012345679',
+      password: 'FinanceSecurePassword123!',
+      fullName: 'SaniPay Finance Officer',
+      role: UserRole.FINANCE_ADMIN,
+      referralCode: 'SANIFINANCE',
+      initialBalanceKobo: BigInt(50000000), // ₦500,000.00
+    },
+    {
+      email: 'user@sanipay.ng',
+      phone: '08012345680',
+      password: 'UserSecurePassword123!',
+      fullName: 'SaniPay Demo Customer',
+      role: UserRole.CUSTOMER,
+      referralCode: 'SANIDEMO',
+      initialBalanceKobo: BigInt(5000000), // ₦50,000.00
+    },
+  ];
+
+  for (const u of seedUsers) {
+    const existing = await prisma.user.findUnique({ where: { email: u.email } });
+    if (!existing) {
+      const passwordHash = await argon2.hash(u.password, argonOptions);
+      const user = await prisma.user.create({
+        data: {
+          email: u.email,
+          phone: u.phone,
+          passwordHash,
+          transactionPinHash: defaultPinHash,
+          role: u.role,
+          status: UserStatus.ACTIVE,
+          isEmailVerified: true,
+          isPhoneVerified: true,
+          referralCode: u.referralCode,
+          profile: {
+            create: {
+              fullName: u.fullName,
+              bvnVerified: true,
+              ninVerified: true,
+            },
+          },
+          wallet: {
+            create: {
+              balanceKobo: u.initialBalanceKobo,
+              ledgerBalanceKobo: u.initialBalanceKobo,
+            },
+          },
+        },
+      });
+      console.log(`- Created Seed User: ${u.fullName} (${u.email}) [${u.role}]`);
+    } else {
+      console.log(`- User already exists: ${u.email} (${u.role})`);
+    }
+  }
 
   // 1. Telecom Networks
   const networksData = [

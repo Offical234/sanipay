@@ -69,7 +69,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
-      NEXT_PUBLIC_API_URL: "http://backend:3000/api/v1"
+      NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost:3000/api/v1}"
     ports:
       - "3001:3001"
 
