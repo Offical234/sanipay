@@ -24,7 +24,11 @@ export interface AppConfig {
   vtu: {
     defaultProvider: string;
     vtpassApiKey?: string;
+    vtpassSecretKey?: string;
+    vtpassBaseUrl?: string;
     clubkonnektApiKey?: string;
+    clubkonnektUserId?: string;
+    clubkonnektBaseUrl?: string;
   };
 }
 
@@ -60,6 +64,10 @@ export default (): AppConfig => ({
   vtu: {
     defaultProvider: process.env.DEFAULT_VTU_PROVIDER || 'mock',
     vtpassApiKey: process.env.VTPASS_API_KEY,
+    vtpassSecretKey: process.env.VTPASS_SECRET_KEY,
+    vtpassBaseUrl: process.env.VTPASS_BASE_URL || 'https://sandbox.vtpass.com/api',
     clubkonnektApiKey: process.env.CLUBKONNEKT_API_KEY,
+    clubkonnektUserId: process.env.CLUBKONNEKT_USER_ID,
+    clubkonnektBaseUrl: process.env.CLUBKONNEKT_BASE_URL || 'https://www.clubkonnect.com/api',
   },
 });

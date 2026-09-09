@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthService } from '../auth/auth.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   FundWalletDto,
   TransferFundsDto,
@@ -21,6 +22,7 @@ export class WalletService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ──────────────────────────── GET WALLET BALANCE ─────────────────────────
@@ -344,6 +346,24 @@ export class WalletService {
     this.logger.log(
       `P2P Transfer executed: ${sender.phone} -> ${recipient.phone} [₦${amountNaira}, Ref: ${reference}]`,
     );
+
+    // Notify sender and recipient
+    await Promise.all([
+      this.notificationsService.dispatchNotification({
+        userId: senderId,
+        title: 'Transfer Sent',
+        message: `₦${amountNaira} sent to ${recipient.profile?.fullName ?? recipient.phone}. Ref: ${reference}`,
+        type: 'WALLET',
+        metadata: { reference, amountKobo: amountBigInt.toString() },
+      }),
+      this.notificationsService.dispatchNotification({
+        userId: recipient.id,
+        title: 'Transfer Received',
+        message: `₦${amountNaira} received from ${sender.profile?.fullName ?? sender.phone}. Ref: ${reference}`,
+        type: 'WALLET',
+        metadata: { reference, amountKobo: amountBigInt.toString() },
+      }),
+    ]);
 
     return {
       message: `₦${amountNaira} transferred successfully to ${recipient.profile?.fullName ?? recipient.phone}.`,

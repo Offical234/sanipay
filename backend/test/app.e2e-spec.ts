@@ -135,6 +135,25 @@ describe('SaniPay Backend API (e2e)', () => {
       count: jest.fn().mockResolvedValue(0),
       update: jest.fn().mockResolvedValue({}),
     },
+    notification: {
+      create: jest.fn().mockResolvedValue({ id: 'notif_1' }),
+      createMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findUnique: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
+      update: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    supportTicket: {
+      create: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({}),
+      count: jest.fn().mockResolvedValue(0),
+    },
+    supportMessage: {
+      create: jest.fn().mockResolvedValue({ id: 'smsg_1' }),
+    },
     $transaction: jest.fn(async (cb: any) => cb(mockPrismaService)),
   };
 
@@ -1159,7 +1178,197 @@ describe('SaniPay Backend API (e2e)', () => {
         .expect(403);
     });
   });
+
+  // ════════════════════════════════════════════════════════════════════
+  //  PHASE 11: NOTIFICATIONS & SUPPORT TICKETS
+  // ════════════════════════════════════════════════════════════════════
+
+  describe('Phase 11 — Notifications & Support Tickets', () => {
+    beforeEach(() => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: mockCustomerUser.id,
+        email: mockCustomerUser.email,
+        role: 'CUSTOMER',
+        status: 'ACTIVE',
+      });
+    });
+
+    // ────────── NOTIFICATIONS ──────────
+
+    it('/api/v1/notifications (GET) should return notification inbox with meta', async () => {
+      const mockNotifications = [
+        {
+          id: 'notif-1',
+          title: 'Transfer Sent',
+          message: '₦1,000 sent.',
+          type: 'WALLET',
+          isRead: false,
+          metadata: null,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+
+      mockPrismaService.notification.count
+        .mockResolvedValueOnce(1) // totalCount
+        .mockResolvedValueOnce(1); // unreadCount
+      mockPrismaService.notification.findMany.mockResolvedValue(mockNotifications);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/notifications`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data[0].title).toBe('Transfer Sent');
+      expect(res.body.meta).toBeDefined();
+      expect(res.body.meta.unreadCount).toBe(1);
+    });
+
+    it('/api/v1/notifications/unread-count (GET) should return unread count', async () => {
+      mockPrismaService.notification.count.mockResolvedValue(4);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/notifications/unread-count`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.unreadCount).toBe(4);
+    });
+
+    it('/api/v1/notifications/:id/read (PUT) should mark notification as read', async () => {
+      mockPrismaService.notification.findUnique.mockResolvedValue({
+        id: 'notif-1',
+        userId: mockCustomerUser.id,
+        isRead: false,
+      });
+      mockPrismaService.notification.update.mockResolvedValue({
+        id: 'notif-1',
+        isRead: true,
+      });
+
+      const res = await request(app.getHttpServer())
+        .put(`/${API_PREFIX}/notifications/notif-1/read`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.isRead).toBe(true);
+    });
+
+    it('/api/v1/notifications/read-all (PUT) should mark all notifications as read', async () => {
+      mockPrismaService.notification.updateMany.mockResolvedValue({ count: 5 });
+
+      const res = await request(app.getHttpServer())
+        .put(`/${API_PREFIX}/notifications/read-all`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.updatedCount).toBe(5);
+    });
+
+    // ────────── SUPPORT TICKETS ──────────
+
+    it('/api/v1/support/tickets (POST) should create a support ticket', async () => {
+      const newTicket = {
+        id: 'tkt-e2e-1',
+        ticketNumber: 'TKT-20260908-XY7Z',
+        subject: 'Data plan not activated',
+        category: 'DATA',
+        status: 'OPEN',
+        priority: 'MEDIUM',
+        createdAt: new Date().toISOString(),
+        messages: [{ id: 'smsg-1' }],
+      };
+
+      mockPrismaService.supportTicket.create.mockResolvedValue(newTicket);
+      mockPrismaService.notification.create.mockResolvedValue({ id: 'notif_2' });
+
+      const res = await request(app.getHttpServer())
+        .post(`/${API_PREFIX}/support/tickets`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          subject: 'Data plan not activated',
+          category: 'DATA',
+          message: 'I purchased a 2GB data plan 1 hour ago but it has not been activated on my line.',
+        })
+        .expect(201);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.ticketNumber).toMatch(/^TKT-/);
+      expect(res.body.data.status).toBe('OPEN');
+    });
+
+    it('/api/v1/support/tickets/:id (GET) should return ticket details with messages', async () => {
+      const ticketWithMessages = {
+        id: 'tkt-e2e-1',
+        userId: mockCustomerUser.id,
+        ticketNumber: 'TKT-20260908-XY7Z',
+        subject: 'Data plan not activated',
+        category: 'DATA',
+        status: 'OPEN',
+        priority: 'MEDIUM',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messages: [
+          {
+            id: 'smsg-1',
+            senderId: mockCustomerUser.id,
+            senderType: 'USER',
+            message: 'I purchased a 2GB data plan.',
+            attachments: null,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        user: {
+          id: mockCustomerUser.id,
+          email: 'musa@example.com',
+          phone: '08012345678',
+          profile: { fullName: 'Musa Sani' },
+        },
+        transaction: null,
+      };
+
+      mockPrismaService.supportTicket.findUnique.mockResolvedValue(ticketWithMessages);
+
+      const res = await request(app.getHttpServer())
+        .get(`/${API_PREFIX}/support/tickets/tkt-e2e-1`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.ticketNumber).toBe('TKT-20260908-XY7Z');
+      expect(Array.isArray(res.body.data.messages)).toBe(true);
+      expect(res.body.data.messages.length).toBe(1);
+    });
+
+    it('/api/v1/support/tickets/:id/messages (POST) should add a message to a ticket', async () => {
+      mockPrismaService.supportTicket.findUnique.mockResolvedValue({
+        id: 'tkt-e2e-1',
+        userId: mockCustomerUser.id,
+        ticketNumber: 'TKT-20260908-XY7Z',
+        subject: 'Data plan not activated',
+        status: 'OPEN',
+      });
+      mockPrismaService.supportMessage.create.mockResolvedValue({
+        id: 'smsg-2',
+        ticketId: 'tkt-e2e-1',
+        senderType: 'USER',
+        message: 'Please expedite this, it has been 2 hours now.',
+        createdAt: new Date().toISOString(),
+      });
+      mockPrismaService.supportTicket.update.mockResolvedValue({});
+
+      const res = await request(app.getHttpServer())
+        .post(`/${API_PREFIX}/support/tickets/tkt-e2e-1/messages`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ message: 'Please expedite this, it has been 2 hours now.' })
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.senderType).toBe('USER');
+    });
+  });
 });
-
-
-

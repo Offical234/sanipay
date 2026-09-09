@@ -5,6 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { ReferralQueryDto, ClaimRewardsDto } from './dto/referral.dto';
 import { ReferralStatus } from '@prisma/client';
 
@@ -15,7 +16,10 @@ export const DEFAULT_REFERRAL_REWARD_KOBO = 20000n; // ₦200.00 in Kobo
 export class ReferralsService {
   private readonly logger = new Logger(ReferralsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   // ──────────────────────────── REFERRAL SUMMARY ────────────────────────────
 
@@ -314,6 +318,15 @@ export class ReferralsService {
     this.logger.log(
       `User ${userId} claimed ${totalClaimKobo} Kobo across ${unpaidRewards.length} referral rewards. Reference: ${claimReference}`,
     );
+
+    // Dispatch wallet notification for the claim
+    await this.notificationsService.dispatchNotification({
+      userId,
+      title: 'Referral Bonus Credited',
+      message: `${this._formatNaira(totalClaimKobo)} in referral bonuses has been credited to your wallet. Ref: ${claimReference}`,
+      type: 'WALLET',
+      metadata: { reference: claimReference, amountKobo: totalClaimKobo.toString() },
+    });
 
     return {
       message: 'Referral rewards successfully claimed and credited to your wallet',

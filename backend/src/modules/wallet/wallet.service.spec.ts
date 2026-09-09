@@ -8,6 +8,7 @@ import {
 import { WalletService } from './wallet.service';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthService } from '../auth/auth.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentGatewayOption } from './dto/wallet.dto';
 
 describe('WalletService', () => {
@@ -77,11 +78,16 @@ describe('WalletService', () => {
       verifyTransactionPin: jest.fn().mockResolvedValue({ valid: true }),
     };
 
+    const mockNotificationsService = {
+      dispatchNotification: jest.fn().mockResolvedValue({ id: 'notif-1' }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WalletService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuthService, useValue: authService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
       ],
     }).compile();
 

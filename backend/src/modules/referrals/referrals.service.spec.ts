@@ -1,12 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReferralsService, QUALIFYING_THRESHOLD_KOBO, DEFAULT_REFERRAL_REWARD_KOBO } from './referrals.service';
 import { PrismaService } from '../../database/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ReferralStatus } from '@prisma/client';
 
 describe('ReferralsService', () => {
   let service: ReferralsService;
   let prisma: any;
+
+  const mockNotificationsService = {
+    dispatchNotification: jest.fn().mockResolvedValue({ id: 'notif-1' }),
+  };
 
   const mockPrismaService: any = {
     user: {
@@ -49,6 +54,7 @@ describe('ReferralsService', () => {
       providers: [
         ReferralsService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
       ],
     }).compile();
 
