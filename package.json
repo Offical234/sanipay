@@ -1,0 +1,34 @@
+{
+  "name": "sanipay-monorepo",
+  "version": "1.0.0",
+  "description": "SaniPay - Nigerian VTU & Digital Services Enterprise Monorepo",
+  "private": true,
+  "scripts": {
+    "dev:backend": "npm --prefix backend run start:dev",
+    "dev:admin": "npm --prefix admin run dev",
+    "build:backend": "npm --prefix backend run build",
+    "build:admin": "npm --prefix admin run build",
+    "build:all": "npm run build:backend && npm run build:admin",
+    "test:backend": "npm --prefix backend run test",
+    "test:all": "npm run test:backend",
+    "prisma:generate": "npm --prefix backend run prisma:generate",
+    "prisma:migrate": "npm --prefix backend run prisma:migrate",
+    "prisma:seed": "npm --prefix backend run prisma:seed",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d --build",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:logs": "docker compose -f docker/docker-compose.yml logs -f"
+  },
+  "keywords": [
+    "sanipay",
+    "vtu",
+    "nigeria",
+    "fintech",
+    "nestjs",
+    "nextjs",
+    "flutter",
+    "docker",
+    "prisma"
+  ],
+  "author": "SaniPay Technologies Ltd",
+  "license": "Proprietary"
+}
