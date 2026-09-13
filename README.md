@@ -121,6 +121,24 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 ---
 
+## Monorepo Shortcut Commands (Root `package.json`)
+
+You can run monorepo-wide operations directly from the root directory:
+
+| Command | Action |
+| :--- | :--- |
+| `npm run dev:backend` | Start NestJS backend in hot-reload watch mode |
+| `npm run dev:admin` | Start Next.js admin dashboard in dev mode |
+| `npm run build:all` | Build both backend API and admin frontend |
+| `npm run test:backend` | Execute all 93 backend unit tests |
+| `npm run prisma:generate` | Generate Prisma client code |
+| `npm run prisma:migrate` | Run database migrations |
+| `npm run prisma:seed` | Seed default admin accounts and master telecom data |
+| `npm run docker:up` | Launch full stack in Docker Compose |
+| `npm run docker:down` | Stop and tear down Docker Compose stack |
+
+---
+
 ## Local Development Setup
 
 ### 1. Backend API (`backend/`)
